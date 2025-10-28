@@ -1,0 +1,47 @@
+DELIMITER $$
+
+CREATE PROCEDURE start_assembly(IN p_license_plate VARCHAR(20))
+BEGIN
+    DECLARE v_assembly_line_id INT;
+    DECLARE v_workstation_id INT;
+    DECLARE v_chassis_in_use VARCHAR(50);
+
+    -- línea de montaje asignada al vehículo
+    SELECT id_assembly_line INTO v_assembly_line_id
+    FROM vehicles
+    WHERE license_plate = p_license_plate;
+
+    IF v_assembly_line_id IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'No vehicle found with that license plate';
+    END IF;
+
+    -- Buscar la primera estación de esa línea
+    SELECT workstation_id INTO v_workstation_id
+    FROM workstation
+    WHERE assembly_line_id = v_assembly_line_id
+    ORDER BY station_order ASC
+    LIMIT 1;
+
+    -- Verificar si está ocupada
+    SELECT chassis_number INTO v_chassis_in_use
+    FROM workstation_logs
+    WHERE workstation_id = v_workstation_id
+    AND exit_datetime IS NULL
+    LIMIT 1;
+
+    IF v_chassis_in_use IS NOT NULL THEN
+        -- Estación ocupada
+        SELECT CONCAT('Station occupied by vehicle with chassis: ', v_chassis_in_use) AS message;
+    ELSE
+        -- Insertar o posicionar el vehículo en la primera estación
+        INSERT INTO workstation_logs(workstation_id, chassis_number, entry_datetime)
+        SELECT v_workstation_id, chassis_number, NOW()
+        FROM vehicles
+        WHERE license_plate = p_license_plate;
+
+        SELECT 'Vehicle successfully positioned in the first station of its assembly line.' AS message;
+    END IF;
+END$$
+
+DELIMITER ;
